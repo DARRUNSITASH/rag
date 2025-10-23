@@ -118,25 +118,33 @@ Deno.serve(async (req: Request) => {
 });
 
 async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: text,
-      model: 'text-embedding-3-small',
-    }),
-  });
+  const apiKey = Deno.env.get('GOOGLE_AI_API_KEY');
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: {
+          parts: [{ text }]
+        },
+        taskType: 'RETRIEVAL_DOCUMENT'
+      }),
+    }
+  );
 
   const data = await response.json();
-  return data.data[0].embedding;
+  return data.embedding.values;
 }
 
 async function generateAnswer(query: string, context: string): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_AI_API_KEY');
+
   const systemPrompt = `You are an advanced Multimodal Retrieval-Augmented Generation (RAG) Assistant for an Intelligence Centre.
-You analyze and reason across multiple data types including text, PDFs, images, and audio transcripts.
+You analyze and reason across multiple data types including text, PDFs, images, videos, and audio transcripts.
 
 Your goal is to accurately answer the user's query using ONLY the provided retrieved context.
 Every statement must be grounded in the source data. Do not make assumptions or add information not present in the context.
@@ -144,26 +152,31 @@ Every statement must be grounded in the source data. Do not make assumptions or 
 Provide a clear, concise answer in 2-3 paragraphs that directly addresses the query.
 If the context doesn't contain sufficient information, clearly state this limitation.`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `User Query: ${query}\n\nRetrieved Context:\n${context}\n\nProvide a well-structured answer based solely on the above context.`
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `${systemPrompt}\n\nUser Query: ${query}\n\nRetrieved Context:\n${context}\n\nProvide a well-structured answer based solely on the above context.`
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 800,
         }
-      ],
-      temperature: 0.3,
-      max_tokens: 800
-    }),
-  });
+      }),
+    }
+  );
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  return data.candidates[0].content.parts[0].text;
 }
